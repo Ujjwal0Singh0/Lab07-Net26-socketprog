@@ -1,0 +1,1 @@
+Configuration received: A B 3
