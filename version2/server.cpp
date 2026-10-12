@@ -51,6 +51,7 @@ int main() {
         const char* reply = "Message received by Oracle Node!";
         send(client_fd, reply, strlen(reply), 0);
     }
+    
     close(client_fd);
     close(server_fd);
     return 0;
