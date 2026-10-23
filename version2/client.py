@@ -7,8 +7,9 @@ import time
 ON_PORT = 5000
 MSG_CONNECT = 1
 MSG_LINKSTATE = 2
-TUPLE_SIZE = 9
-LSP_INTERVAL = 10
+TUPLE_SIZE = 9        
+LSP_INTERVAL = 10     
+
 
 def recv_all(sock, n):
     data = b""
@@ -53,6 +54,33 @@ def fmt_links(origin, links):
     return origin + ": " + ",".join(f"{n}={c}" for n, c in links)
 
 
+def link_cost(a, b):
+    lo, hi = (a, b) if a < b else (b, a)
+    for origin, other in ((lo, hi), (hi, lo)):
+        if origin in lsdb:
+            for nbr, c in lsdb[origin][1]:
+                if nbr == other:
+                    return c
+            return -1
+    return -1
+
+
+def print_graph():
+    nodes = set(lsdb)
+    for _, links in lsdb.values():
+        for nbr, _ in links:
+            nodes.add(nbr)
+    nodes = sorted(nodes)
+    n = len(nodes)
+
+    print(f"--- Known graph ({n} nodes: {' '.join(nodes)}) ---")
+    for i in range(n - 1):
+        row = [str(link_cost(nodes[i], nodes[j])) for j in range(i + 1, n)]
+        print(f"# Costs from {nodes[i]} to {', '.join(nodes[i + 1:])}")
+        print("\t" * i + "\t".join(row))
+    print("---")
+
+
 if len(sys.argv) != 4:
     print(f"Usage: {sys.argv[0]} <ON_IP> <my_IP> <my_UDP_port>")
     sys.exit(1)
@@ -81,11 +109,14 @@ body = socket.inet_aton(my_ip) + struct.pack("!H", my_port)
 tcp.sendall(struct.pack("!BH", MSG_CONNECT, len(body)) + body)
 print(f"Sent CONNECT ({my_ip}, {my_port})")
 
+
+
+
 my_id = None
-neighbours = []
-seq = 0
-lsdb = {}
-next_send = None
+neighbours = []     
+seq = 0             
+lsdb = {}           
+next_send = None    
 
 
 def send_lsp():
@@ -116,7 +147,7 @@ def handle_link_state():
         return True
 
     tuples = parse_link_state(body)
-    me = [t for t in tuples if t[3] == 0]
+    me = [t for t in tuples if t[3] == 0]       
     if len(me) != 1:
         print("Malformed LINK-STATE: expected exactly one zero-cost tuple")
         return True
@@ -143,6 +174,17 @@ def handle_lsp():
     if origin not in lsdb or rseq > lsdb[origin][0]:
         lsdb[origin] = (rseq, links)
         print(f"Received LSP seq={rseq}  {fmt_links(origin, links)}")
+        sent_to = []
+        for (letter, ip, port, cost) in neighbours:
+            if (ip, port) == addr or letter == origin:
+                continue
+            try:
+                udp.sendto(data, (ip, port))
+                sent_to.append(letter)
+            except OSError as e:
+                print(f"Could not forward LSP to {letter} ({ip}:{port}): {e}")
+        if sent_to:
+            print(f"Forwarded LSP of {origin} (seq={rseq}) to {','.join(sent_to)}")
 
 
 try:
@@ -163,6 +205,7 @@ try:
 
         if next_send is not None and time.monotonic() >= next_send:
             send_lsp()
+            print_graph()
             next_send = time.monotonic() + LSP_INTERVAL
 
 except KeyboardInterrupt:
